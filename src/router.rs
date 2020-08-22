@@ -90,9 +90,8 @@ impl<'a> Service<Request<Body>> for RouteHandler<'a> {
 		let mut maybe_node = self.routes.get(req.method());
 
 		let uri = req.uri().clone();
-		dbg!(&uri);
 		let path = uri.path().strip_prefix('/').unwrap_or_default().split('/');
-		dbg!(&maybe_node);
+		let mut params = vec![];
 
 		for segment in path {
 			if segment.is_empty() {
@@ -103,18 +102,18 @@ impl<'a> Service<Request<Body>> for RouteHandler<'a> {
 				None => break,
 				Some(node) => {
 					maybe_node = node.path.as_ref().and_then(|routes| {
-						routes
-							.get(&PathSegment::Static(segment))
-							.or_else(|| routes.get(&PathSegment::Dynamic))
+						routes.get(&PathSegment::Static(segment)).or_else(|| {
+							params.push(segment.to_owned());
+							routes.get(&PathSegment::Dynamic)
+						})
 					})
 				}
 			}
 		}
 
-		dbg!(&maybe_node);
 		match maybe_node.and_then(|node| node.route) {
 			Some(route) => {
-				let fut = route(req);
+				let fut = route(params, req);
 				Box::pin(async move {
 					Ok(fut.await.unwrap_or_else(|e| {
 						Builder::default()
@@ -133,12 +132,14 @@ impl<'a> Service<Request<Body>> for RouteHandler<'a> {
 
 #[cfg(test)]
 mod test {
-	use super::{RouterBuilder, RouteNode, RoutePath};
-	use crate::{Request, Response, response, Body, PathSegment, Method};
+	use super::{RouteNode, RoutePath, RouterBuilder};
+	use crate::{response, Body, Method, PathSegment, Request, Response};
 
-	fn test_route(_req: Request) -> Response {
+	fn test_route(_params: Vec<String>, _req: Request) -> Response {
 		Box::pin(async move {
-			Ok(response::Builder::default().status(200).body(Body::empty())?)
+			Ok(response::Builder::default()
+				.status(200)
+				.body(Body::empty())?)
 		})
 	}
 
@@ -147,7 +148,9 @@ mod test {
 	}
 
 	impl<T, F> Apply<F> for T
-	where F: FnOnce(&mut Self) -> () {
+	where
+		F: FnOnce(&mut Self) -> (),
+	{
 		fn apply(mut self, applicator: F) -> Self {
 			applicator(&mut self);
 			self
@@ -159,47 +162,79 @@ mod test {
 		let mut builder = RouterBuilder::default();
 		builder.register(Method::GET, vec![], test_route);
 		builder.register(Method::POST, vec![PathSegment::Dynamic], test_route);
-		builder.register(Method::PUT, vec![PathSegment::Dynamic, PathSegment::Static("foo"), PathSegment::Static("bar")], test_route);
+		builder.register(
+			Method::PUT,
+			vec![
+				PathSegment::Dynamic,
+				PathSegment::Static("foo"),
+				PathSegment::Static("bar"),
+			],
+			test_route,
+		);
 
-		assert_eq!(builder.routes.get(&Method::GET), Some(&RouteNode {
-			route: Some(test_route),
-			path: None,
-		}));
+		assert_eq!(
+			builder.routes.get(&Method::GET),
+			Some(&RouteNode {
+				route: Some(test_route),
+				path: None,
+			})
+		);
 
-		assert_eq!(builder.routes.get(&Method::POST), Some(&RouteNode {
-			route: None,
-			path: Some(RoutePath::new().apply(|path| {
-				path.insert(PathSegment::Dynamic, RouteNode {
-					route: Some(test_route),
-					path: None,
-				});
-			}))
-		}));
+		assert_eq!(
+			builder.routes.get(&Method::POST),
+			Some(&RouteNode {
+				route: None,
+				path: Some(RoutePath::new().apply(|path| {
+					path.insert(
+						PathSegment::Dynamic,
+						RouteNode {
+							route: Some(test_route),
+							path: None,
+						},
+					);
+				}))
+			})
+		);
 
 		let mut put_route = RoutePath::new();
-		put_route.insert(PathSegment::Dynamic, RouteNode {
-			route: None,
-			path: Some(RoutePath::new())
-		});
+		put_route.insert(
+			PathSegment::Dynamic,
+			RouteNode {
+				route: None,
+				path: Some(RoutePath::new()),
+			},
+		);
 
-		assert_eq!(builder.routes.get(&Method::PUT), Some(&RouteNode {
-			route: None,
-			path: Some(RoutePath::new().apply(|path| {
-				path.insert(PathSegment::Dynamic, RouteNode {
-					route: None,
-					path: Some(RoutePath::new().apply(|path| {
-						path.insert(PathSegment::Static("foo"), RouteNode {
+		assert_eq!(
+			builder.routes.get(&Method::PUT),
+			Some(&RouteNode {
+				route: None,
+				path: Some(RoutePath::new().apply(|path| {
+					path.insert(
+						PathSegment::Dynamic,
+						RouteNode {
 							route: None,
 							path: Some(RoutePath::new().apply(|path| {
-								path.insert(PathSegment::Static("bar"), RouteNode {
-									route: Some(test_route),
-									path: None,
-								});
+								path.insert(
+									PathSegment::Static("foo"),
+									RouteNode {
+										route: None,
+										path: Some(RoutePath::new().apply(|path| {
+											path.insert(
+												PathSegment::Static("bar"),
+												RouteNode {
+													route: Some(test_route),
+													path: None,
+												},
+											);
+										})),
+									},
+								);
 							})),
-						});
-					})),
-				});
-			})),
-		}));
+						},
+					);
+				})),
+			})
+		);
 	}
 }

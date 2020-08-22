@@ -9,7 +9,6 @@ edition = "2018"
 [dependencies]
 anyhow = "1.0"
 hyper = "0.13"
-these = "1.0"
 
 [dev-dependencies]
 tokio = { version = "0.2", features = ["full"] }

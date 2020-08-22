@@ -12,4 +12,4 @@ pub enum PathSegment<'a> {
 	Static(&'a str),
 }
 
-pub type Route = fn(Request) -> Response;
+pub type Route = fn(Vec<String>, Request) -> Response;
