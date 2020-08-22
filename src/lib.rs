@@ -1,3 +1,5 @@
+#![cfg_attr(test, feature(test))]
+
 pub mod route;
 pub mod router;
 
