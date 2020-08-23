@@ -9,12 +9,6 @@ pub type Path<'a> = Vec<PathSegment<'a>>;
 #[macro_export]
 macro_rules! path {
 	[] => { vec![] };
-	[ _ ] => {
-		vec![path![@single _]]
-	};
-	[ $first:tt ] => {
-		vec![path![@single $first]]
-	};
 	[ @single _ ] => {
 		PathSegment::Dynamic
 	};
