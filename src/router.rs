@@ -1,4 +1,5 @@
 use crate::route::{Path, PathSegment, Route};
+use anyhow::Error;
 use anyhow::Result;
 use hyper::{
 	body::Body,
@@ -47,15 +48,32 @@ impl<'a, T> Debug for RouteNode<'a, T> {
 type RoutePath<'a, T> = HashMap<PathSegment<'a>, RouteNode<'a, T>>;
 type Routes<'a, T> = HashMap<Method, RouteNode<'a, T>>;
 
+pub type InternalErrorHandler = fn(e: Error) -> Response<Body>;
+fn default_error_handler(e: Error) -> Response<Body> {
+	Builder::default()
+		.status(500)
+		.body(e.to_string().into())
+		.unwrap()
+}
+
+pub type NotFoundHandler = fn(req: Request<Body>) -> Response<Body>;
+fn default_not_found_handler(_req: Request<Body>) -> Response<Body> {
+	Builder::default().status(404).body(Body::empty()).unwrap()
+}
+
 #[derive(Debug)]
 pub struct RouterBuilder<'a, T> {
 	routes: Routes<'a, T>,
+	pub internal_error_handler: Option<InternalErrorHandler>,
+	pub not_found_handler: Option<NotFoundHandler>,
 }
 
 impl<'a, T> Default for RouterBuilder<'a, T> {
 	fn default() -> Self {
 		Self {
 			routes: Routes::default(),
+			internal_error_handler: None,
+			not_found_handler: None,
 		}
 	}
 }
@@ -80,6 +98,8 @@ impl<'a, T> RouterBuilder<'a, T> {
 	pub fn build(self) -> Router<'a, T> {
 		Router {
 			routes: Arc::new(self.routes),
+			internal_error: self.internal_error_handler.unwrap_or(default_error_handler),
+			not_found: self.not_found_handler.unwrap_or(default_not_found_handler),
 		}
 	}
 }
@@ -87,6 +107,8 @@ impl<'a, T> RouterBuilder<'a, T> {
 #[derive(Debug)]
 pub struct Router<'a, T> {
 	routes: Arc<Routes<'a, T>>,
+	internal_error: InternalErrorHandler,
+	not_found: NotFoundHandler,
 }
 
 impl<T, U: 'static> Service<T> for Router<'static, U> {
@@ -100,13 +122,24 @@ impl<T, U: 'static> Service<T> for Router<'static, U> {
 
 	fn call(&mut self, _: T) -> Self::Future {
 		let routes = Arc::clone(&self.routes);
-		let fut = async move { Ok(RouteHandler { routes }) };
+		let internal_error = self.internal_error;
+		let not_found = self.not_found;
+
+		let fut = async move {
+			Ok(RouteHandler {
+				routes,
+				internal_error,
+				not_found,
+			})
+		};
 		Box::pin(fut)
 	}
 }
 
 pub struct RouteHandler<'a, T> {
 	routes: Arc<Routes<'a, T>>,
+	internal_error: InternalErrorHandler,
+	not_found: NotFoundHandler,
 }
 
 impl<'a, T> Service<Request<Body>> for RouteHandler<'a, T>
@@ -149,17 +182,12 @@ where
 		match maybe_node.and_then(|node| node.route) {
 			Some(route) => {
 				let fut = route(params, req);
-				Box::pin(async move {
-					Ok(fut.await.unwrap_or_else(|e| {
-						Builder::default()
-							.status(500)
-							.body(e.to_string().into())
-							.unwrap()
-					}))
-				})
+				let err = self.internal_error;
+				Box::pin(async move { Ok(fut.await.unwrap_or_else(err)) })
 			}
 			None => {
-				Box::pin(async { Ok(Builder::default().status(404).body(Body::empty()).unwrap()) })
+				let response = (self.not_found)(req);
+				Box::pin(async { Ok(response) })
 			}
 		}
 	}

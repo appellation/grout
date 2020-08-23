@@ -17,9 +17,3 @@ See the examples folder for example usage.
 		structs into your route handlers
 - No complex route matching
 	- Perform complex validation in your route handlers
-
-## To-Do
-
-- Error-based HTTP status codes
-- Custom 404/500 handler
-- More testing
