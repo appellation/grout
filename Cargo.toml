@@ -5,6 +5,7 @@ authors = ["Will Nelson <will@wnelson.xyz>"]
 edition = "2018"
 description = "A dead simple hash-based HTTP router built on hyper."
 license = "MIT"
+readme = "README.md"
 repository = "https://github.com/appellation/grout"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

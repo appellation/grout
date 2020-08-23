@@ -48,6 +48,7 @@ impl<'a, T> Debug for RouteNode<'a, T> {
 type RoutePath<'a, T> = HashMap<PathSegment<'a>, RouteNode<'a, T>>;
 type Routes<'a, T> = HashMap<Method, RouteNode<'a, T>>;
 
+/// A function that can convert an error into a response.
 pub type InternalErrorHandler = fn(e: Error) -> Response<Body>;
 fn default_error_handler(e: Error) -> Response<Body> {
 	Builder::default()
@@ -56,11 +57,14 @@ fn default_error_handler(e: Error) -> Response<Body> {
 		.unwrap()
 }
 
+/// A function that handles unroutable requests and creates a response.
 pub type NotFoundHandler = fn(req: Request<Body>) -> Response<Body>;
 fn default_not_found_handler(_req: Request<Body>) -> Response<Body> {
 	Builder::default().status(404).body(Body::empty()).unwrap()
 }
 
+/// A struct to simplify the construction of the router service. Enables registration of
+/// routes and handlers before instantiating the router.
 #[derive(Debug)]
 pub struct RouterBuilder<'a, T> {
 	routes: Routes<'a, T>,
@@ -104,6 +108,16 @@ impl<'a, T> RouterBuilder<'a, T> {
 	}
 }
 
+/// Intended to be used as the main service with hyper.
+/// ```
+/// #[tokio::main]
+/// fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+/// 	let addr = ([127, 0, 0, 1], 3000).into();
+/// 	let server = Server::bind(&addr).serve(RouteBuilder::default().build());
+/// 	server.await?;
+/// 	Ok(())
+/// }
+/// ```
 #[derive(Debug)]
 pub struct Router<'a, T> {
 	routes: Arc<Routes<'a, T>>,
@@ -136,6 +150,7 @@ impl<T, U: 'static> Service<T> for Router<'static, U> {
 	}
 }
 
+/// Responsible for handling the actual HTTP requests from hyper.
 pub struct RouteHandler<'a, T> {
 	routes: Arc<Routes<'a, T>>,
 	internal_error: InternalErrorHandler,

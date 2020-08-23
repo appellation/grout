@@ -3,8 +3,16 @@ use hyper::Body;
 
 pub type Request = hyper::Request<Body>;
 pub type Response = Result<hyper::Response<Body>>;
+
+/// A route path is just a vec of [PathSegment](enum.PathSegment.html)s.
+///
+/// Use the [path!](../macro.path.html) macro to generate this more easily.
 pub type Path<'a> = Vec<PathSegment<'a>>;
 
+/// Create a [Path](route/type.Path.html) with simplified syntax.
+/// ```
+/// path![foo / _ / bar / _] // -> vec![Static("foo"), Dynamic, Static("bar"), Dynamic]
+/// ```
 #[macro_export]
 macro_rules! path {
 	[] => { vec![] };
@@ -19,10 +27,21 @@ macro_rules! path {
 	};
 }
 
+/// Path segments are matched during routing. Static segments are matched through hash equality.
+/// If no static segments match, a corresponding dynamic segment is attempted. For example:
+/// `GET /foo/bar` matches `vec![Static("foo"), Dynamic]` instead of `vec![Dynamic, Dynamic]`.
+///
+/// Dynamic parameters are collected during routing and passed into the handler in an ordered list.
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub enum PathSegment<'a> {
 	Dynamic,
 	Static(&'a str),
 }
 
+/// Represents the route handler type. Although this is typed with a generic return type, this is
+/// only to allow async functions to be used as handlers. T is generally going to be `impl Future<
+/// Output = Response>`, meaning your route handlers are going to look exactly like this:
+/// ```
+/// async fn handler(params: Vec<String>, req: Request) -> Response {}
+/// ```
 pub type Route<T> = fn(Vec<String>, Request) -> T;
