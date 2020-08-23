@@ -1,14 +1,9 @@
-use grout::{response::Builder, Body, PathSegment, Request, Response, RouterBuilder};
+use grout::{response::Builder, Body, path, PathSegment, Request, Response, RouterBuilder};
 use hyper::{Method, Server};
 
-fn handle_get(params: Vec<String>, _req: Request) -> Response {
+fn handler(params: Vec<String>, _req: Request) -> Response {
 	let res = Builder::default();
 	dbg!(params);
-	Box::pin(async move { Ok(res.body(Body::empty())?) })
-}
-
-fn handle_post(_params: Vec<String>, _req: Request) -> Response {
-	let res = Builder::default();
 	Box::pin(async move { Ok(res.body(Body::empty())?) })
 }
 
@@ -18,9 +13,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 	let mut builder = RouterBuilder::default();
 	builder
-		.register(Method::GET, vec![], handle_get)
-		.register(Method::POST, vec![PathSegment::Static("foo")], handle_post)
-		.register(Method::GET, vec![PathSegment::Dynamic], handle_get);
+		.register(Method::GET, path![], handler)
+		.register(Method::POST, path![foo / _ / bar / _ / baz], handler)
+		.register(Method::GET, path![_], handler);
 
 	let router = builder.build();
 
