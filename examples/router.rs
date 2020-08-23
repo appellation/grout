@@ -1,8 +1,9 @@
-use grout::{response::Builder, Body, path, PathSegment, Request, Response, RouterBuilder};
-use hyper::{Method, Server};
+use grout::{
+	path, Body, Method, PathSegment, Request, Response, ResponseBuilder, RouterBuilder, Server,
+};
 
 fn handler(params: Vec<String>, _req: Request) -> Response {
-	let res = Builder::default();
+	let res = ResponseBuilder::default();
 	dbg!(params);
 	Box::pin(async move { Ok(res.body(Body::empty())?) })
 }

@@ -1,5 +1,5 @@
 use anyhow::Result;
-pub use hyper::{http::*, Body, Method};
+use hyper::Body;
 use std::{future::Future, pin::Pin};
 
 pub type Request = hyper::Request<Body>;

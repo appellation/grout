@@ -133,7 +133,8 @@ impl<'a> Service<Request<Body>> for RouteHandler<'a> {
 #[cfg(test)]
 mod test {
 	use super::{RouteNode, RoutePath, RouterBuilder};
-	use crate::{response, Body, Method, PathSegment, Request, Response};
+	use crate::{PathSegment, Request, Response};
+	use hyper::{http::response, Body, Method};
 
 	fn test_route(_params: Vec<String>, _req: Request) -> Response {
 		Box::pin(async move {
