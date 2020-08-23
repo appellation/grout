@@ -1,9 +1,8 @@
 use anyhow::Result;
 use hyper::Body;
-use std::{future::Future, pin::Pin};
 
 pub type Request = hyper::Request<Body>;
-pub type Response = Pin<Box<dyn Future<Output = Result<hyper::Response<Body>>> + Send>>;
+pub type Response = Result<hyper::Response<Body>>;
 pub type Path<'a> = Vec<PathSegment<'a>>;
 
 #[macro_export]
@@ -26,4 +25,4 @@ pub enum PathSegment<'a> {
 	Static(&'a str),
 }
 
-pub type Route = fn(Vec<String>, Request) -> Response;
+pub type Route<T> = fn(Vec<String>, Request) -> T;

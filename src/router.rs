@@ -1,4 +1,5 @@
 use crate::route::{Path, PathSegment, Route};
+use anyhow::Result;
 use hyper::{
 	body::Body,
 	http::{response::Builder, Method},
@@ -6,30 +7,61 @@ use hyper::{
 	Request, Response,
 };
 use std::{
+	cmp::PartialEq,
 	collections::HashMap,
 	convert::Infallible,
+	fmt::{self, Debug, Formatter},
 	future::Future,
 	pin::Pin,
+	ptr,
 	sync::Arc,
 	task::{Context, Poll},
 };
 
-#[derive(Debug, Default, Eq, PartialEq)]
-struct RouteNode<'a> {
-	route: Option<Route>,
-	path: Option<RoutePath<'a>>,
+struct RouteNode<'a, T> {
+	route: Option<Route<T>>,
+	path: Option<RoutePath<'a, T>>,
 }
 
-type RoutePath<'a> = HashMap<PathSegment<'a>, RouteNode<'a>>;
-type Routes<'a> = HashMap<Method, RouteNode<'a>>;
-
-#[derive(Debug, Default)]
-pub struct RouterBuilder<'a> {
-	routes: Routes<'a>,
+impl<'a, T> Default for RouteNode<'a, T> {
+	fn default() -> Self {
+		Self {
+			route: None,
+			path: None,
+		}
+	}
 }
 
-impl<'a> RouterBuilder<'a> {
-	pub fn register(&mut self, method: Method, path: Path<'a>, route: Route) -> &mut Self {
+impl<'a, T> PartialEq for RouteNode<'a, T> {
+	fn eq(&self, other: &RouteNode<'a, T>) -> bool {
+		ptr::eq(&self.route, &other.route) && self.path.eq(&other.path)
+	}
+}
+
+impl<'a, T> Debug for RouteNode<'a, T> {
+	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+		write!(f, "{:?}", &self)
+	}
+}
+
+type RoutePath<'a, T> = HashMap<PathSegment<'a>, RouteNode<'a, T>>;
+type Routes<'a, T> = HashMap<Method, RouteNode<'a, T>>;
+
+#[derive(Debug)]
+pub struct RouterBuilder<'a, T> {
+	routes: Routes<'a, T>,
+}
+
+impl<'a, T> Default for RouterBuilder<'a, T> {
+	fn default() -> Self {
+		Self {
+			routes: Routes::default(),
+		}
+	}
+}
+
+impl<'a, T> RouterBuilder<'a, T> {
+	pub fn register(&mut self, method: Method, path: Path<'a>, route: Route<T>) -> &mut Self {
 		let mut node = self.routes.entry(method).or_default();
 
 		let path_iter = path.into_iter();
@@ -45,7 +77,7 @@ impl<'a> RouterBuilder<'a> {
 		self
 	}
 
-	pub fn build(self) -> Router<'a> {
+	pub fn build(self) -> Router<'a, T> {
 		Router {
 			routes: Arc::new(self.routes),
 		}
@@ -53,12 +85,12 @@ impl<'a> RouterBuilder<'a> {
 }
 
 #[derive(Debug)]
-pub struct Router<'a> {
-	routes: Arc<Routes<'a>>,
+pub struct Router<'a, T> {
+	routes: Arc<Routes<'a, T>>,
 }
 
-impl<T> Service<T> for Router<'static> {
-	type Response = RouteHandler<'static>;
+impl<T, U: 'static> Service<T> for Router<'static, U> {
+	type Response = RouteHandler<'static, U>;
 	type Error = Infallible;
 	type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
@@ -73,11 +105,14 @@ impl<T> Service<T> for Router<'static> {
 	}
 }
 
-pub struct RouteHandler<'a> {
-	routes: Arc<Routes<'a>>,
+pub struct RouteHandler<'a, T> {
+	routes: Arc<Routes<'a, T>>,
 }
 
-impl<'a> Service<Request<Body>> for RouteHandler<'a> {
+impl<'a, T> Service<Request<Body>> for RouteHandler<'a, T>
+where
+	T: 'static + Future<Output = Result<hyper::Response<Body>>> + Send,
+{
 	type Response = Response<Body>;
 	type Error = Infallible;
 	type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
@@ -133,15 +168,13 @@ impl<'a> Service<Request<Body>> for RouteHandler<'a> {
 #[cfg(test)]
 mod test {
 	use super::{RouteNode, RoutePath, RouterBuilder};
-	use crate::{PathSegment, Request, Response};
+	use crate::{path, PathSegment, Request, Response};
 	use hyper::{http::response, Body, Method};
 
-	fn test_route(_params: Vec<String>, _req: Request) -> Response {
-		Box::pin(async move {
-			Ok(response::Builder::default()
-				.status(200)
-				.body(Body::empty())?)
-		})
+	async fn test_route(_params: Vec<String>, _req: Request) -> Response {
+		Ok(response::Builder::default()
+			.status(200)
+			.body(Body::empty())?)
 	}
 
 	trait Apply<F> {
@@ -161,17 +194,9 @@ mod test {
 	#[test]
 	fn adds_routes() {
 		let mut builder = RouterBuilder::default();
-		builder.register(Method::GET, vec![], test_route);
-		builder.register(Method::POST, vec![PathSegment::Dynamic], test_route);
-		builder.register(
-			Method::PUT,
-			vec![
-				PathSegment::Dynamic,
-				PathSegment::Static("foo"),
-				PathSegment::Static("bar"),
-			],
-			test_route,
-		);
+		builder.register(Method::GET, path![], test_route);
+		builder.register(Method::POST, path![_], test_route);
+		builder.register(Method::PUT, path![_ / foo / bar], test_route);
 
 		assert_eq!(
 			builder.routes.get(&Method::GET),
@@ -195,15 +220,6 @@ mod test {
 					);
 				}))
 			})
-		);
-
-		let mut put_route = RoutePath::new();
-		put_route.insert(
-			PathSegment::Dynamic,
-			RouteNode {
-				route: None,
-				path: Some(RoutePath::new()),
-			},
 		);
 
 		assert_eq!(

@@ -2,10 +2,10 @@ use grout::{
 	path, Body, Method, PathSegment, Request, Response, ResponseBuilder, RouterBuilder, Server,
 };
 
-fn handler(params: Vec<String>, _req: Request) -> Response {
+async fn handler(params: Vec<String>, _req: Request) -> Response {
 	let res = ResponseBuilder::default();
 	dbg!(params);
-	Box::pin(async move { Ok(res.body(Body::empty())?) })
+	Ok(res.body(Body::empty())?)
 }
 
 #[tokio::main]
