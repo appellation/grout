@@ -75,7 +75,7 @@ impl<'a> Default for RouterBuilder<'a> {
 }
 
 impl<'a> RouterBuilder<'a> {
-	pub fn register<T: 'static + Future<Output = Result<Response<Body>>> + Send + Sync>(
+	pub fn register<T: 'static + Future<Output = Result<Response<Body>>> + Send>(
 		&mut self,
 		method: Method,
 		path: Path<'a>,
