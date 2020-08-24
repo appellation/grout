@@ -1,4 +1,4 @@
-use crate::route::{Path, PathSegment, Route};
+use crate::route::{DynRoute, Path, PathSegment, Route};
 use anyhow::Error;
 use anyhow::Result;
 use hyper::{
@@ -19,34 +19,26 @@ use std::{
 	task::{Context, Poll},
 };
 
-struct RouteNode<'a, T> {
-	route: Option<Route<T>>,
-	path: Option<RoutePath<'a, T>>,
+#[derive(Default)]
+struct RouteNode<'a> {
+	route: Option<DynRoute>,
+	path: Option<RoutePath<'a>>,
 }
 
-impl<'a, T> Default for RouteNode<'a, T> {
-	fn default() -> Self {
-		Self {
-			route: None,
-			path: None,
-		}
-	}
-}
-
-impl<'a, T> PartialEq for RouteNode<'a, T> {
-	fn eq(&self, other: &RouteNode<'a, T>) -> bool {
+impl<'a> PartialEq for RouteNode<'a> {
+	fn eq(&self, other: &RouteNode<'a>) -> bool {
 		ptr::eq(&self.route, &other.route) && self.path.eq(&other.path)
 	}
 }
 
-impl<'a, T> Debug for RouteNode<'a, T> {
+impl<'a> Debug for RouteNode<'a> {
 	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
 		write!(f, "{:?}", &self)
 	}
 }
 
-type RoutePath<'a, T> = HashMap<PathSegment<'a>, RouteNode<'a, T>>;
-type Routes<'a, T> = HashMap<Method, RouteNode<'a, T>>;
+type RoutePath<'a> = HashMap<PathSegment<'a>, RouteNode<'a>>;
+type Routes<'a> = HashMap<Method, RouteNode<'a>>;
 
 /// A function that can convert an error into a response.
 pub type InternalErrorHandler = fn(e: Error) -> Response<Body>;
@@ -66,13 +58,13 @@ fn default_not_found_handler(_req: Request<Body>) -> Response<Body> {
 /// A struct to simplify the construction of the router service. Enables registration of
 /// routes and handlers before instantiating the router.
 #[derive(Debug)]
-pub struct RouterBuilder<'a, T> {
-	routes: Routes<'a, T>,
+pub struct RouterBuilder<'a> {
+	routes: Routes<'a>,
 	pub internal_error_handler: Option<InternalErrorHandler>,
 	pub not_found_handler: Option<NotFoundHandler>,
 }
 
-impl<'a, T> Default for RouterBuilder<'a, T> {
+impl<'a> Default for RouterBuilder<'a> {
 	fn default() -> Self {
 		Self {
 			routes: Routes::default(),
@@ -82,8 +74,13 @@ impl<'a, T> Default for RouterBuilder<'a, T> {
 	}
 }
 
-impl<'a, T> RouterBuilder<'a, T> {
-	pub fn register(&mut self, method: Method, path: Path<'a>, route: Route<T>) -> &mut Self {
+impl<'a> RouterBuilder<'a> {
+	pub fn register<T: 'static + Future<Output = Result<Response<Body>>> + Send + Sync>(
+		&mut self,
+		method: Method,
+		path: Path<'a>,
+		route: Route<T>,
+	) -> &mut Self {
 		let mut node = self.routes.entry(method).or_default();
 
 		let path_iter = path.into_iter();
@@ -94,12 +91,13 @@ impl<'a, T> RouterBuilder<'a, T> {
 				.entry(segment)
 				.or_default();
 		}
-
-		node.route = Some(route);
+		node.route = Some(Box::new(move |params: Vec<String>, req: Request<Body>| {
+			Box::pin(route(params, req))
+		}));
 		self
 	}
 
-	pub fn build(self) -> Router<'a, T> {
+	pub fn build(self) -> Router<'a> {
 		Router {
 			routes: Arc::new(self.routes),
 			internal_error: self.internal_error_handler.unwrap_or(default_error_handler),
@@ -119,14 +117,14 @@ impl<'a, T> RouterBuilder<'a, T> {
 /// }
 /// ```
 #[derive(Debug)]
-pub struct Router<'a, T> {
-	routes: Arc<Routes<'a, T>>,
+pub struct Router<'a> {
+	routes: Arc<Routes<'a>>,
 	internal_error: InternalErrorHandler,
 	not_found: NotFoundHandler,
 }
 
-impl<T, U: 'static> Service<T> for Router<'static, U> {
-	type Response = RouteHandler<'static, U>;
+impl<T> Service<T> for Router<'static> {
+	type Response = RouteHandler<'static>;
 	type Error = Infallible;
 	type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
@@ -151,16 +149,13 @@ impl<T, U: 'static> Service<T> for Router<'static, U> {
 }
 
 /// Responsible for handling the actual HTTP requests from hyper.
-pub struct RouteHandler<'a, T> {
-	routes: Arc<Routes<'a, T>>,
+pub struct RouteHandler<'a> {
+	routes: Arc<Routes<'a>>,
 	internal_error: InternalErrorHandler,
 	not_found: NotFoundHandler,
 }
 
-impl<'a, T> Service<Request<Body>> for RouteHandler<'a, T>
-where
-	T: 'static + Future<Output = Result<hyper::Response<Body>>> + Send,
-{
+impl<'a> Service<Request<Body>> for RouteHandler<'a> {
 	type Response = Response<Body>;
 	type Error = Infallible;
 	type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
@@ -194,7 +189,7 @@ where
 			}
 		}
 
-		match maybe_node.and_then(|node| node.route) {
+		match maybe_node.and_then(|node| node.route.as_ref()) {
 			Some(route) => {
 				let fut = route(params, req);
 				let err = self.internal_error;

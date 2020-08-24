@@ -8,6 +8,11 @@ async fn handler(params: Vec<String>, _req: Request) -> Response {
 	Ok(res.body(Body::empty())?)
 }
 
+async fn other_handler(_params: Vec<String>, _req: Request) -> Response {
+	let res = ResponseBuilder::default();
+	Ok(res.body(Body::empty())?)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	let addr = ([127, 0, 0, 1], 3000).into();
@@ -16,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	builder
 		.register(Method::GET, path![], handler)
 		.register(Method::POST, path![foo / _ / bar / _ / baz], handler)
-		.register(Method::GET, path![_], handler);
+		.register(Method::GET, path![_], other_handler);
 
 	let router = builder.build();
 

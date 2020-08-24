@@ -1,5 +1,6 @@
 use anyhow::Result;
 use hyper::Body;
+use std::{future::Future, pin::Pin};
 
 pub type Request = hyper::Request<Body>;
 pub type Response = Result<hyper::Response<Body>>;
@@ -45,3 +46,10 @@ pub enum PathSegment<'a> {
 /// async fn handler(params: Vec<String>, req: Request) -> Response {}
 /// ```
 pub type Route<T> = fn(Vec<String>, Request) -> T;
+
+/// Boxed closure for route handlers. Apparently different abstract types don't match, so we need
+/// to box the return type of the user-land route handlers. To keep the API clean, this type is
+/// used internally and created when the user registers a route.
+pub(crate) type DynRoute = Box<
+	dyn Fn(Vec<String>, Request) -> Pin<Box<dyn Future<Output = Response> + Send>> + Send + Sync,
+>;
