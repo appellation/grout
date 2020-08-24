@@ -76,11 +76,11 @@ impl<'a> Default for RouterBuilder<'a> {
 
 impl<'a> RouterBuilder<'a> {
 	pub fn register<T: 'static + Future<Output = Result<Response<Body>>> + Send>(
-		&mut self,
+		mut self,
 		method: Method,
 		path: Path<'a>,
 		route: Route<T>,
-	) -> &mut Self {
+	) -> Self {
 		let mut node = self.routes.entry(method).or_default();
 
 		let path_iter = path.into_iter();
