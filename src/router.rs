@@ -181,8 +181,12 @@ impl<'a> Service<Request<Body>> for RouteHandler<'a> {
 				Some(node) => {
 					maybe_node = node.path.as_ref().and_then(|routes| {
 						routes.get(&PathSegment::Static(segment)).or_else(|| {
-							params.push(segment.to_owned());
-							routes.get(&PathSegment::Dynamic)
+							let route = routes.get(&PathSegment::Dynamic);
+							if route.is_some() {
+								params.push(segment.to_owned());
+							}
+
+							route
 						})
 					})
 				}
