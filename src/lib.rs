@@ -41,6 +41,6 @@ pub mod route;
 /// Use the RouterBuilder to create a Router: pass the router to hyper as the service.
 pub mod router;
 
-pub use hyper::{http::response::Builder as ResponseBuilder, Body, Method, Server};
+pub use hyper;
 pub use route::*;
 pub use router::*;

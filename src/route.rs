@@ -2,6 +2,7 @@ use anyhow::Result;
 use hyper::Body;
 use std::{future::Future, pin::Pin};
 
+pub use hyper::http::response::Builder as ResponseBuilder;
 pub type Request = hyper::Request<Body>;
 pub type Response = Result<hyper::Response<Body>>;
 
