@@ -3,20 +3,32 @@
 A dead simple hash-based HTTP router built on hyper.
 
 ```rs
-use grout::{path, Body, Method, Request, Response, ResponseBuilder, RouterBuilder, Server};
+use grout::{
+	hyper::{Body, Method, Server},
+	path, PathSegment, Request, Response, ResponseBuilder, RouterBuilder,
+};
 
 async fn handler(params: Vec<String>, _req: Request) -> Response {
-	Ok(ResponseBuilder::default().body(Body::empty())?)
+	let res = ResponseBuilder::default();
+	dbg!(params);
+	Ok(res.body(Body::empty())?)
+}
+
+async fn other_handler(_params: Vec<String>, _req: Request) -> Response {
+	let res = ResponseBuilder::default();
+	Ok(res.body(Body::empty())?)
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	let addr = ([127, 0, 0, 1], 3000).into();
-	let router = RouterBuilder::default()
+
+	let builder = RouterBuilder::default()
 		.register(Method::GET, path![], handler)
-		.register(Method::GET, path![foo / _], handler)
-		.register(Method::POST, path![foo / _], handler)
-		.build();
+		.register(Method::POST, path![foo / _ / bar / _ / baz], handler)
+		.register(Method::GET, path![_], other_handler);
+
+	let router = builder.build();
 
 	let server = Server::bind(&addr).serve(router);
 	println!("Listening on http://{}", addr);
@@ -24,6 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	server.await?;
 	Ok(())
 }
+
 ```
 
 ## Features
