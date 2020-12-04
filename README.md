@@ -2,7 +2,7 @@
 
 A dead simple hash-based HTTP router built on hyper.
 
-```rs
+```rust
 use grout::{
 	hyper::{Body, Method, Server},
 	path, PathSegment, Request, Response, ResponseBuilder, RouterBuilder,
