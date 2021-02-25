@@ -70,8 +70,7 @@ where
 	) -> &mut Self {
 		let mut node = self.routes.entry(method).or_default();
 
-		let path_iter = path.into_iter();
-		for segment in path_iter {
+		for segment in path.into_iter() {
 			node = node
 				.path
 				.get_or_insert(RoutePath::default())
@@ -87,35 +86,32 @@ where
 		prefix: &P,
 		path: &'path str,
 	) -> (Vec<&'path str>, Option<&RouteNode<T, R>>) {
-		let mut maybe_node = self.routes.get(prefix);
+		path.strip_prefix('/')
+			.unwrap_or_default()
+			.split('/')
+			.filter(|segment| !segment.is_empty())
+			.try_fold(
+				(vec![], self.routes.get(prefix)),
+				|(mut params, maybe_node), segment| match maybe_node {
+					None => Err((params, maybe_node)),
+					Some(node) => {
+						let new_node = node.path.as_ref().and_then(|routes| {
+							routes
+								.get(&PathSegment::Static(segment.to_owned().into()))
+								.or_else(|| {
+									let route = routes.get(&PathSegment::Dynamic);
+									if route.is_some() {
+										params.push(segment);
+									}
 
-		let path = path.strip_prefix('/').unwrap_or_default().split('/');
-		let mut params = vec![];
+									route
+								})
+						});
 
-		for segment in path {
-			if segment.is_empty() {
-				continue;
-			}
-
-			match maybe_node {
-				None => break,
-				Some(node) => {
-					maybe_node = node.path.as_ref().and_then(|routes| {
-						routes
-							.get(&PathSegment::Static(segment.to_owned().into()))
-							.or_else(|| {
-								let route = routes.get(&PathSegment::Dynamic);
-								if route.is_some() {
-									params.push(segment);
-								}
-
-								route
-							})
-					})
-				}
-			}
-		}
-
-		(params, maybe_node)
+						Ok((params, new_node))
+					}
+				},
+			)
+			.unwrap_or_else(|e| e)
 	}
 }
