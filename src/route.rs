@@ -52,5 +52,7 @@ where
 	F: Fn(Vec<&str>, &T) -> Fut,
 	Fut: Future<Output = R>,
 {
-	fn route(&self, _: Vec<&str>, _: &T) -> Pin<Box<dyn Future<Output = R> + Send + 'static>> { todo!() }
+	fn route(&self, _: Vec<&str>, _: &T) -> Pin<Box<dyn Future<Output = R> + Send + 'static>> {
+		todo!()
+	}
 }

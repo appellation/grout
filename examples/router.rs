@@ -1,7 +1,7 @@
 use grout::{
-	http::HttpRouter,
-	hyper::{Body, Method, server::Server},
-	path, PathSegment, Request, Response, ResponseBuilder, Router,
+	http::{HttpRouter, Request, Response, ResponseBuilder},
+	hyper::{server::Server, Body, Method},
+	path, PathSegment,
 };
 
 async fn handler(params: Vec<&str>, _req: &Request) -> Response {

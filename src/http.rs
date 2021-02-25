@@ -1,4 +1,11 @@
-use std::{convert::Infallible, future::{self, Future}, ops::Deref, pin::Pin, sync::Arc, task::{Context, Poll}};
+use std::{
+	convert::Infallible,
+	future::{self, Future},
+	ops::Deref,
+	pin::Pin,
+	sync::Arc,
+	task::{Context, Poll},
+};
 
 use anyhow::{Error, Result};
 use hyper::{service::Service, Body, Method};
@@ -68,13 +75,11 @@ impl<T, E: Clone + 'static, N: Clone + 'static> Service<T> for HttpRouter<E, N> 
 		let error_handler = self.error_handler.clone();
 		let not_found_handler = self.not_found_handler.clone();
 
-		future::ready(
-			Ok(RouteHandler {
-				inner: router,
-				error_handler,
-				not_found_handler,
-			})
-		)
+		future::ready(Ok(RouteHandler {
+			inner: router,
+			error_handler,
+			not_found_handler,
+		}))
 	}
 }
 
