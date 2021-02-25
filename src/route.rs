@@ -1,11 +1,4 @@
-use anyhow::Result;
-use hyper::Body;
 use std::{borrow::Cow, future::Future, pin::Pin};
-
-pub use hyper::http::response::Builder as ResponseBuilder;
-
-pub type Request = hyper::Request<Body>;
-pub type Response = Result<hyper::Response<Body>>;
 
 /// A route path is just a vec of [PathSegment](enum.PathSegment.html)s.
 ///

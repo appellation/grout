@@ -3,7 +3,12 @@ use std::{convert::Infallible, future::{self, Future}, ops::Deref, pin::Pin, syn
 use anyhow::{Error, Result};
 use hyper::{service::Service, Body, Method};
 
-use crate::{Request, Response, Route, Router};
+pub use hyper::http::response::Builder as ResponseBuilder;
+
+pub type Request = hyper::Request<Body>;
+pub type Response = Result<hyper::Response<Body>>;
+
+use crate::{Route, Router};
 
 type InnerHttpResponse<O = Response> = Pin<Box<dyn Future<Output = O> + Send>>;
 type InnerHttpRouter = Arc<Router<Method, Request, InnerHttpResponse>>;
