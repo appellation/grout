@@ -33,6 +33,9 @@
 
 // mod pool;
 
+#[cfg(feature = "hyper")]
+pub mod http;
+
 /// Various types and utilities for defining routes and route handlers.
 pub mod route;
 
@@ -41,6 +44,7 @@ pub mod route;
 /// Use the RouterBuilder to create a Router: pass the router to hyper as the service.
 pub mod router;
 
+#[cfg(feature = "hyper")]
 pub use hyper;
 pub use route::*;
 pub use router::*;

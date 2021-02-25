@@ -1,15 +1,16 @@
 use anyhow::Result;
 use hyper::Body;
-use std::{future::Future, pin::Pin};
+use std::{borrow::Cow, future::Future, pin::Pin};
 
 pub use hyper::http::response::Builder as ResponseBuilder;
+
 pub type Request = hyper::Request<Body>;
 pub type Response = Result<hyper::Response<Body>>;
 
 /// A route path is just a vec of [PathSegment](enum.PathSegment.html)s.
 ///
 /// Use the [path!](../macro.path.html) macro to generate this more easily.
-pub type Path<'a> = Vec<PathSegment<'a>>;
+pub type Path = Vec<PathSegment>;
 
 /// Create a [Path](route/type.Path.html) with simplified syntax.
 /// ```
@@ -22,7 +23,7 @@ macro_rules! path {
 		PathSegment::Dynamic
 	};
 	[ @single $first:tt ] => {
-		PathSegment::Static(stringify!($first))
+		PathSegment::Static(stringify!($first).into())
 	};
 	[ $($segment:tt) / * ] => {
 		vec![$(path![@single $segment]), *]
@@ -35,22 +36,28 @@ macro_rules! path {
 ///
 /// Dynamic parameters are collected during routing and passed into the handler in an ordered list.
 #[derive(Debug, Eq, PartialEq, Hash)]
-pub enum PathSegment<'a> {
+pub enum PathSegment {
 	Dynamic,
-	Static(&'a str),
+	Static(Cow<'static, str>),
 }
 
-/// Represents the route handler type. Although this is typed with a generic return type, this is
-/// only to allow async functions to be used as handlers. T is generally going to be `impl Future<
-/// Output = Response>`, meaning your route handlers are going to look exactly like this:
-/// ```
-/// async fn handler(params: Vec<String>, req: Request) -> Response {}
-/// ```
-pub type Route<T> = fn(Vec<String>, Request) -> T;
+pub trait Route<T, R> {
+	fn route(&self, params: Vec<&str>, body: &T) -> R;
+}
 
-/// Boxed closure for route handlers. Apparently different abstract types don't match, so we need
-/// to box the return type of the user-land route handlers. To keep the API clean, this type is
-/// used internally and created when the user registers a route.
-pub(crate) type DynRoute = Box<
-	dyn Fn(Vec<String>, Request) -> Pin<Box<dyn Future<Output = Response> + Send>> + Send + Sync,
->;
+// impl<F, T, R> Route<T, R> for F
+// where
+// 	F: Fn(Vec<&str>, &T) -> R,
+// {
+// 	fn route(&self, params: Vec<&str>, body: &T) -> R {
+// 		(self)(params, body)
+// 	}
+// }
+
+impl<F, Fut, T, R> Route<T, Pin<Box<dyn Future<Output = R> + Send + 'static>>> for F
+where
+	F: Fn(Vec<&str>, &T) -> Fut,
+	Fut: Future<Output = R>,
+{
+	fn route(&self, _: Vec<&str>, _: &T) -> Pin<Box<dyn Future<Output = R> + Send + 'static>> { todo!() }
+}
