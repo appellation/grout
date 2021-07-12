@@ -162,33 +162,34 @@ impl<'a> Service<Request<Body>> for RouteHandler<'a> {
 	}
 
 	fn call(&mut self, req: Request<Body>) -> Self::Future {
-		let mut maybe_node = self.routes.get(req.method());
-
 		let uri = req.uri().clone();
-		let path = uri.path().strip_prefix('/').unwrap_or_default().split('/');
-		let mut params = vec![];
+		let (params, maybe_node) = uri
+			.path()
+			.strip_prefix('/')
+			.unwrap_or_default()
+			.split('/')
+			.filter(|s| !s.is_empty())
+			.try_fold(
+				(vec![], self.routes.get(req.method())),
+				|(mut params, maybe_node), segment| match maybe_node {
+					None => Err((params, maybe_node)),
+					Some(node) => {
+						let new_node = node.path.as_ref().and_then(|routes| {
+							routes.get(&PathSegment::Static(segment)).or_else(|| {
+								let route = routes.get(&PathSegment::Dynamic);
+								if route.is_some() {
+									params.push(segment.to_owned());
+								}
 
-		for segment in path {
-			if segment.is_empty() {
-				continue;
-			}
+								route
+							})
+						});
 
-			match maybe_node {
-				None => break,
-				Some(node) => {
-					maybe_node = node.path.as_ref().and_then(|routes| {
-						routes.get(&PathSegment::Static(segment)).or_else(|| {
-							let route = routes.get(&PathSegment::Dynamic);
-							if route.is_some() {
-								params.push(segment.to_owned());
-							}
-
-							route
-						})
-					})
-				}
-			}
-		}
+						Ok((params, new_node))
+					}
+				},
+			)
+			.unwrap_or_else(|e| e);
 
 		match maybe_node.and_then(|node| node.route.as_ref()) {
 			Some(route) => {
