@@ -12,7 +12,7 @@ use std::{
 	collections::HashMap,
 	convert::Infallible,
 	fmt::{self, Debug, Formatter},
-	future::Future,
+	future::{ready, Future, Ready},
 	pin::Pin,
 	ptr,
 	sync::Arc,
@@ -126,7 +126,7 @@ pub struct Router<'a> {
 impl<T> Service<T> for Router<'static> {
 	type Response = RouteHandler<'static>;
 	type Error = Infallible;
-	type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+	type Future = Ready<Result<Self::Response, Self::Error>>;
 
 	fn poll_ready(&mut self, _: &mut Context) -> Poll<Result<(), Self::Error>> {
 		Poll::Ready(Ok(()))
@@ -137,14 +137,11 @@ impl<T> Service<T> for Router<'static> {
 		let internal_error = self.internal_error;
 		let not_found = self.not_found;
 
-		let fut = async move {
-			Ok(RouteHandler {
-				routes,
-				internal_error,
-				not_found,
-			})
-		};
-		Box::pin(fut)
+		ready(Ok(RouteHandler {
+			routes,
+			internal_error,
+			not_found,
+		}))
 	}
 }
 
