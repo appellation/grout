@@ -1,10 +1,4 @@
-use anyhow::Result;
-use hyper::Body;
 use std::{future::Future, pin::Pin};
-
-pub use hyper::http::response::Builder as ResponseBuilder;
-pub type Request = hyper::Request<Body>;
-pub type Response = Result<hyper::Response<Body>>;
 
 /// A route path is just a vec of [PathSegment](enum.PathSegment.html)s.
 ///
@@ -46,11 +40,10 @@ pub enum PathSegment<'a> {
 /// ```
 /// async fn handler(params: Vec<String>, req: Request) -> Response {}
 /// ```
-pub type Route<T> = fn(Vec<String>, Request) -> T;
+pub type Route<Req, Res> = fn(Vec<String>, Req) -> Res;
 
 /// Boxed closure for route handlers. Apparently different abstract types don't match, so we need
 /// to box the return type of the user-land route handlers. To keep the API clean, this type is
 /// used internally and created when the user registers a route.
-pub(crate) type DynRoute = Box<
-	dyn Fn(Vec<String>, Request) -> Pin<Box<dyn Future<Output = Response> + Send>> + Send + Sync,
->;
+pub(crate) type DynRoute<Req, Res> =
+	Box<dyn Fn(Vec<String>, Req) -> Pin<Box<dyn Future<Output = Res> + Send>> + Send + Sync>;

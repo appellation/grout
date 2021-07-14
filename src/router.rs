@@ -1,110 +1,41 @@
 use crate::route::{DynRoute, Path, PathSegment, Route};
-use anyhow::Error;
-use anyhow::Result;
-use hyper::{
-	body::Body,
-	http::{response::Builder, Method},
-	service::Service,
-	Request, Response,
-};
 use std::{
 	cmp::PartialEq,
 	collections::HashMap,
-	convert::Infallible,
 	fmt::{self, Debug, Formatter},
-	future::{ready, Future, Ready},
-	pin::Pin,
+	future::Future,
+	hash::Hash,
 	ptr,
-	sync::Arc,
-	task::{Context, Poll},
 };
 
-#[derive(Default)]
-struct RouteNode<'a> {
-	route: Option<DynRoute>,
-	path: Option<RoutePath<'a>>,
+pub struct RouteNode<'path, Req, Res> {
+	pub route: Option<DynRoute<Req, Res>>,
+	pub path: Option<RoutePath<'path, Req, Res>>,
 }
 
-impl<'a> PartialEq for RouteNode<'a> {
-	fn eq(&self, other: &RouteNode<'a>) -> bool {
+impl<'path, Req, Res> Default for RouteNode<'path, Req, Res> {
+	fn default() -> Self {
+		Self {
+			route: None,
+			path: None,
+		}
+	}
+}
+
+impl<'path, Req, Res> PartialEq for RouteNode<'path, Req, Res> {
+	fn eq(&self, other: &RouteNode<'path, Req, Res>) -> bool {
 		ptr::eq(&self.route, &other.route) && self.path.eq(&other.path)
 	}
 }
 
-impl<'a> Debug for RouteNode<'a> {
+impl<'a, Req, Res> Debug for RouteNode<'a, Req, Res> {
 	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
 		write!(f, "{:?}", &self)
 	}
 }
 
-type RoutePath<'a> = HashMap<PathSegment<'a>, RouteNode<'a>>;
-type Routes<'a> = HashMap<Method, RouteNode<'a>>;
-
-/// A function that can convert an error into a response.
-pub type InternalErrorHandler = fn(e: Error) -> Response<Body>;
-fn default_error_handler(e: Error) -> Response<Body> {
-	Builder::default()
-		.status(500)
-		.body(e.to_string().into())
-		.unwrap()
-}
-
-/// A function that handles unroutable requests and creates a response.
-pub type NotFoundHandler = fn(req: Request<Body>) -> Response<Body>;
-fn default_not_found_handler(_req: Request<Body>) -> Response<Body> {
-	Builder::default().status(404).body(Body::empty()).unwrap()
-}
-
-/// A struct to simplify the construction of the router service. Enables registration of
-/// routes and handlers before instantiating the router.
-#[derive(Debug)]
-pub struct RouterBuilder<'a> {
-	routes: Routes<'a>,
-	pub internal_error_handler: Option<InternalErrorHandler>,
-	pub not_found_handler: Option<NotFoundHandler>,
-}
-
-impl<'a> Default for RouterBuilder<'a> {
-	fn default() -> Self {
-		Self {
-			routes: Routes::default(),
-			internal_error_handler: None,
-			not_found_handler: None,
-		}
-	}
-}
-
-impl<'a> RouterBuilder<'a> {
-	pub fn register<T: 'static + Future<Output = Result<Response<Body>>> + Send>(
-		mut self,
-		method: Method,
-		path: Path<'a>,
-		route: Route<T>,
-	) -> Self {
-		let mut node = self.routes.entry(method).or_default();
-
-		let path_iter = path.into_iter();
-		for segment in path_iter {
-			node = node
-				.path
-				.get_or_insert(RoutePath::default())
-				.entry(segment)
-				.or_default();
-		}
-		node.route = Some(Box::new(move |params: Vec<String>, req: Request<Body>| {
-			Box::pin(route(params, req))
-		}));
-		self
-	}
-
-	pub fn build(self) -> Router<'a> {
-		Router {
-			routes: Arc::new(self.routes),
-			internal_error: self.internal_error_handler.unwrap_or(default_error_handler),
-			not_found: self.not_found_handler.unwrap_or(default_not_found_handler),
-		}
-	}
-}
+type RoutePath<'path, Req, Res> = HashMap<PathSegment<'path>, RouteNode<'path, Req, Res>>;
+pub type Routes<'path, Prefix, Req, Res> = HashMap<Prefix, RouteNode<'path, Req, Res>>;
 
 /// Intended to be used as the main service with hyper.
 /// ```
@@ -117,60 +48,56 @@ impl<'a> RouterBuilder<'a> {
 /// }
 /// ```
 #[derive(Debug)]
-pub struct Router<'a> {
-	routes: Arc<Routes<'a>>,
-	internal_error: InternalErrorHandler,
-	not_found: NotFoundHandler,
+pub struct Router<'a, Prefix, Req, Res> {
+	routes: Routes<'a, Prefix, Req, Res>,
 }
 
-impl<T> Service<T> for Router<'static> {
-	type Response = RouteHandler<'static>;
-	type Error = Infallible;
-	type Future = Ready<Result<Self::Response, Self::Error>>;
-
-	fn poll_ready(&mut self, _: &mut Context) -> Poll<Result<(), Self::Error>> {
-		Poll::Ready(Ok(()))
-	}
-
-	fn call(&mut self, _: T) -> Self::Future {
-		let routes = Arc::clone(&self.routes);
-		let internal_error = self.internal_error;
-		let not_found = self.not_found;
-
-		ready(Ok(RouteHandler {
-			routes,
-			internal_error,
-			not_found,
-		}))
+impl<'a, Prefix, Req, Res> Default for Router<'a, Prefix, Req, Res> {
+	fn default() -> Self {
+		Self {
+			routes: Default::default(),
+		}
 	}
 }
 
-/// Responsible for handling the actual HTTP requests from hyper.
-pub struct RouteHandler<'a> {
-	routes: Arc<Routes<'a>>,
-	internal_error: InternalErrorHandler,
-	not_found: NotFoundHandler,
-}
+impl<'a, Prefix, Req, Res> Router<'a, Prefix, Req, Res>
+where
+	Req: 'static,
+	Prefix: Eq + Hash,
+{
+	pub fn register<T: 'static + Future<Output = Res> + Send>(
+		mut self,
+		prefix: Prefix,
+		path: Path<'a>,
+		route: Route<Req, T>,
+	) -> Self {
+		let mut node = self.routes.entry(prefix).or_default();
 
-impl<'a> Service<Request<Body>> for RouteHandler<'a> {
-	type Response = Response<Body>;
-	type Error = Infallible;
-	type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
-
-	fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-		Poll::Ready(Ok(()))
+		let path_iter = path.into_iter();
+		for segment in path_iter {
+			node = node
+				.path
+				.get_or_insert(RoutePath::default())
+				.entry(segment)
+				.or_default();
+		}
+		node.route = Some(Box::new(move |params: Vec<String>, req: Req| {
+			Box::pin(route(params, req))
+		}));
+		self
 	}
 
-	fn call(&mut self, req: Request<Body>) -> Self::Future {
-		let uri = req.uri().clone();
-		let (params, maybe_node) = uri
-			.path()
-			.strip_prefix('/')
+	pub fn find_node<'path>(
+		&self,
+		prefix: &Prefix,
+		path: &'path str,
+	) -> (Vec<String>, Option<&'path RouteNode<Req, Res>>) {
+		path.strip_prefix('/')
 			.unwrap_or_default()
 			.split('/')
 			.filter(|s| !s.is_empty())
 			.try_fold(
-				(vec![], self.routes.get(req.method())),
+				(vec![], self.routes.get(prefix)),
 				|(mut params, maybe_node), segment| match maybe_node {
 					None => Err((params, maybe_node)),
 					Some(node) => {
@@ -189,18 +116,6 @@ impl<'a> Service<Request<Body>> for RouteHandler<'a> {
 					}
 				},
 			)
-			.unwrap_or_else(|e| e);
-
-		match maybe_node.and_then(|node| node.route.as_ref()) {
-			Some(route) => {
-				let fut = route(params, req);
-				let err = self.internal_error;
-				Box::pin(async move { Ok(fut.await.unwrap_or_else(err)) })
-			}
-			None => {
-				let response = (self.not_found)(req);
-				Box::pin(async { Ok(response) })
-			}
-		}
+			.unwrap_or_else(|e| e)
 	}
 }

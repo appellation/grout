@@ -31,6 +31,11 @@
 //! The router builder exposes `internal_error_handler` and `not_found_handler` which can handle
 //! errors returned from handlers and unmatched requests respectively.
 
+#[cfg(feature = "http")]
+mod http;
+#[cfg(feature = "http")]
+pub use http::*;
+
 // mod pool;
 
 /// Various types and utilities for defining routes and route handlers.
@@ -41,6 +46,5 @@ pub mod route;
 /// Use the RouterBuilder to create a Router: pass the router to hyper as the service.
 pub mod router;
 
-pub use hyper;
 pub use route::*;
 pub use router::*;

@@ -12,7 +12,10 @@ repository = "https://github.com/appellation/grout"
 
 [dependencies]
 anyhow = "1.0"
-hyper = "0.13"
+hyper = { version = "0.13", optional = true }
+
+[features]
+http = ["hyper"]
 
 [dev-dependencies]
 tokio = { version = "0.2", features = ["full"] }
